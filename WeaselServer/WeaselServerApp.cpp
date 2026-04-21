@@ -2,6 +2,103 @@
 #include "WeaselServerApp.h"
 #include <filesystem>
 
+namespace {
+class WinSparkleApi {
+ public:
+  WinSparkleApi() {
+    const auto dll_path = (WeaselServerApp::install_dir() / L"WinSparkle.dll");
+    module_ = LoadLibraryW(dll_path.c_str());
+    if (!module_) {
+      return;
+    }
+
+    init_ = load<init_fn>("win_sparkle_init");
+    cleanup_ = load<cleanup_fn>("win_sparkle_cleanup");
+    set_registry_path_ =
+        load<set_registry_path_fn>("win_sparkle_set_registry_path");
+    set_lang_ = load<set_lang_fn>("win_sparkle_set_lang");
+    set_appcast_url_ =
+        load<set_appcast_url_fn>("win_sparkle_set_appcast_url");
+    check_update_with_ui_ =
+        load<check_update_with_ui_fn>("win_sparkle_check_update_with_ui");
+
+    if (!init_ || !cleanup_ || !set_registry_path_ || !set_lang_ ||
+        !set_appcast_url_ || !check_update_with_ui_) {
+      FreeLibrary(module_);
+      module_ = nullptr;
+    }
+  }
+
+  ~WinSparkleApi() {
+    if (module_) {
+      FreeLibrary(module_);
+    }
+  }
+
+  void set_registry_path(const char* path) const {
+    if (set_registry_path_) {
+      set_registry_path_(path);
+    }
+  }
+
+  void set_lang(const char* lang) const {
+    if (set_lang_) {
+      set_lang_(lang);
+    }
+  }
+
+  void set_appcast_url(const char* url) const {
+    if (set_appcast_url_) {
+      set_appcast_url_(url);
+    }
+  }
+
+  void init() const {
+    if (init_) {
+      init_();
+    }
+  }
+
+  void cleanup() const {
+    if (cleanup_) {
+      cleanup_();
+    }
+  }
+
+  void check_update_with_ui() const {
+    if (check_update_with_ui_) {
+      check_update_with_ui_();
+    }
+  }
+
+ private:
+  template <typename T>
+  T load(const char* name) const {
+    return reinterpret_cast<T>(GetProcAddress(module_, name));
+  }
+
+  using init_fn = void(__cdecl*)();
+  using cleanup_fn = void(__cdecl*)();
+  using set_registry_path_fn = void(__cdecl*)(const char*);
+  using set_lang_fn = void(__cdecl*)(const char*);
+  using set_appcast_url_fn = void(__cdecl*)(const char*);
+  using check_update_with_ui_fn = void(__cdecl*)();
+
+  HMODULE module_ = nullptr;
+  init_fn init_ = nullptr;
+  cleanup_fn cleanup_ = nullptr;
+  set_registry_path_fn set_registry_path_ = nullptr;
+  set_lang_fn set_lang_ = nullptr;
+  set_appcast_url_fn set_appcast_url_ = nullptr;
+  check_update_with_ui_fn check_update_with_ui_ = nullptr;
+};
+
+WinSparkleApi& win_sparkle() {
+  static WinSparkleApi api;
+  return api;
+}
+}  // namespace
+
 WeaselServerApp::WeaselServerApp()
     : m_handler(std::make_unique<RimeWithWeaselHandler>(&m_ui)),
       tray_icon(m_ui) {
@@ -17,16 +114,17 @@ int WeaselServerApp::Run() {
     return -1;
 
   // win_sparkle_set_appcast_url("http://localhost:8000/weasel/update/appcast.xml");
-  win_sparkle_set_registry_path("Software\\Rime\\Weasel\\Updates");
+  auto& sparkle = win_sparkle();
+  sparkle.set_registry_path("Software\\Rime\\Weasel\\Updates");
   if (GetThreadUILanguage() ==
       MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL))
-    win_sparkle_set_lang("zh-TW");
+    sparkle.set_lang("zh-TW");
   else if (GetThreadUILanguage() ==
            MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED))
-    win_sparkle_set_lang("zh-CN");
+    sparkle.set_lang("zh-CN");
   else
-    win_sparkle_set_lang("en");
-  win_sparkle_init();
+    sparkle.set_lang("en");
+  sparkle.init();
   m_ui.Create(m_server.GetHWnd());
 
   m_handler->Initialize();
@@ -40,9 +138,25 @@ int WeaselServerApp::Run() {
   m_handler->Finalize();
   m_ui.Destroy();
   tray_icon.RemoveIcon();
-  win_sparkle_cleanup();
+  sparkle.cleanup();
 
   return ret;
+}
+
+bool WeaselServerApp::check_update() {
+  // when checked manually, show testing versions too
+  std::string feed_url = GetCustomResource("ManualUpdateFeedURL", "APPCAST");
+  std::wstring channel{};
+  auto ret = RegGetStringValue(HKEY_CURRENT_USER, L"Software\\Rime\\Weasel",
+                               L"UpdateChannel", channel);
+  if (!ret && channel == L"testing") {
+    feed_url = GetCustomResource("TestingManualUpdateFeedURL", "APPCAST");
+  }
+  if (!feed_url.empty()) {
+    win_sparkle().set_appcast_url(feed_url.c_str());
+  }
+  win_sparkle().check_update_with_ui();
+  return true;
 }
 
 void WeaselServerApp::SetupMenuHandlers() {

@@ -37,9 +37,97 @@ typedef HRESULT(WINAPI* PTF_INSTALLLAYOUTORTIP)(LPCWSTR psz, DWORD dwFlags);
   L"SOFTWARE\\Microsoft\\Windows\\Windows Error " \
   L"Reporting\\LocalDumps\\WeaselServer.exe"
 
-BOOL copy_file(const std::wstring& src, const std::wstring& dest) {
-  BOOL ret = CopyFile(src.c_str(), dest.c_str(), FALSE);
-  if (!ret) {
+BOOL is_arm64_machine();
+
+namespace {
+
+std::wstring format_win32_error(DWORD error) {
+  LPWSTR buffer = nullptr;
+  DWORD size = FormatMessageW(
+      FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+          FORMAT_MESSAGE_IGNORE_INSERTS,
+      nullptr, error, 0, reinterpret_cast<LPWSTR>(&buffer), 0, nullptr);
+  if (size == 0 || buffer == nullptr) {
+    return L"Unknown error";
+  }
+
+  std::wstring message(buffer, size);
+  LocalFree(buffer);
+
+  while (!message.empty() &&
+         (message.back() == L'\r' || message.back() == L'\n' ||
+          message.back() == L' ')) {
+    message.pop_back();
+  }
+  return message;
+}
+
+bool file_exists(const std::wstring& path) {
+  DWORD attr = GetFileAttributesW(path.c_str());
+  return attr != INVALID_FILE_ATTRIBUTES &&
+         !(attr & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+std::wstring build_copy_error_message(const std::wstring& src,
+                                      const std::wstring& dest,
+                                      DWORD error) {
+  std::wstring message = L"CopyFile failed.\nSource: " + src +
+                         L"\nTarget: " + dest + L"\nError " +
+                         std::to_wstring(error) + L": " +
+                         format_win32_error(error);
+  return message;
+}
+
+void append_file_status(std::wstring& message, const std::wstring& path) {
+  message += L"\n";
+  message += path;
+  message += file_exists(path) ? L" [found]" : L" [missing]";
+}
+
+std::wstring build_regsvr32_error_message(const std::wstring& app,
+                                          const std::wstring& params,
+                                          const std::wstring& tsf_path,
+                                          DWORD error,
+                                          DWORD exit_code,
+                                          bool launched) {
+  std::wstring message =
+      launched ? L"regsvr32.exe failed.\n" : L"Unable to launch regsvr32.exe.\n";
+  message += L"Command: " + app + L" " + params;
+  message += L"\nDLL: " + tsf_path;
+  if (launched) {
+    message += L"\nExit code: " + std::to_wstring(exit_code);
+  } else {
+    message += L"\nError " + std::to_wstring(error) + L": " +
+               format_win32_error(error);
+  }
+
+  if (is_arm64_machine()) {
+    WCHAR baseName[_MAX_FNAME];
+    WCHAR ext[_MAX_EXT];
+    _wsplitpath_s(tsf_path.c_str(), nullptr, 0, nullptr, 0, baseName,
+                  _countof(baseName), ext, _countof(ext));
+    if (_wcsicmp(baseName, L"weasel") == 0 && _wcsicmp(ext, L".dll") == 0) {
+      std::wstring sidecarX64 = tsf_path;
+      std::wstring sidecarARM64 = tsf_path;
+      ireplace_last(sidecarX64, L".dll", L"x64.dll");
+      ireplace_last(sidecarARM64, L".dll", L"ARM64.dll");
+      message += L"\nRequired sidecar DLLs:";
+      append_file_status(message, sidecarX64);
+      append_file_status(message, sidecarARM64);
+    }
+  }
+
+  return message;
+}
+
+DWORD copy_file_with_error(const std::wstring& src, const std::wstring& dest) {
+  if (CopyFile(src.c_str(), dest.c_str(), FALSE)) {
+    return ERROR_SUCCESS;
+  }
+
+  DWORD last_error = GetLastError();
+  if (last_error != ERROR_FILE_NOT_FOUND &&
+      last_error != ERROR_PATH_NOT_FOUND) {
     for (int i = 0; i < 10; ++i) {
       std::wstring old = dest + L".old." + std::to_wstring(i);
       if (MoveFileEx(dest.c_str(), old.c_str(), MOVEFILE_REPLACE_EXISTING)) {
@@ -47,10 +135,26 @@ BOOL copy_file(const std::wstring& src, const std::wstring& dest) {
         break;
       }
     }
-    ret = CopyFile(src.c_str(), dest.c_str(), FALSE);
+    if (CopyFile(src.c_str(), dest.c_str(), FALSE)) {
+      return ERROR_SUCCESS;
+    }
+    last_error = GetLastError();
   }
-  return ret;
+
+  return last_error;
 }
+
+int report_copy_failure(bool silent,
+                        const std::wstring& src,
+                        const std::wstring& dest,
+                        DWORD error) {
+  const std::wstring message = build_copy_error_message(src, dest, error);
+  MSG_NOT_SILENT_ID_CAP(silent, message.c_str(), IDS_STR_INSTALL_FAILED,
+                        MB_ICONERROR | MB_OK);
+  return 1;
+}
+
+}  // namespace
 
 BOOL delete_file(const std::wstring& file) {
   BOOL ret = DeleteFile(file.c_str());
@@ -140,10 +244,9 @@ int install_ime_file(std::wstring& srcPath,
 
   int retval = 0;
   // 复制 .dll/.ime 到系统目录
-  if (!copy_file(srcPath, destPath)) {
-    MSG_NOT_SILENT_ID_CAP(silent, destPath.c_str(), IDS_STR_INSTALL_FAILED,
-                          MB_ICONERROR | MB_OK);
-    return 1;
+  if (DWORD error = copy_file_with_error(srcPath, destPath);
+      error != ERROR_SUCCESS) {
+    return report_copy_failure(silent, srcPath, destPath, error);
   }
   retval += func(destPath, true, false, false, hant, silent);
   if (is_wow64()) {
@@ -169,12 +272,17 @@ int install_ime_file(std::wstring& srcPath,
         ireplace_last(srcPathARM32, ext, L"ARM" + ext);
 
         std::wstring destPathARM32 = std::wstring(sysarm32) + L"\\weasel" + ext;
-        if (!copy_file(srcPathARM32, destPathARM32)) {
-          MSG_NOT_SILENT_ID_CAP(silent, destPathARM32.c_str(),
-                                IDS_STR_INSTALL_FAILED, MB_ICONERROR | MB_OK);
-          return 1;
+        if (file_exists(srcPathARM32)) {
+          if (DWORD error = copy_file_with_error(srcPathARM32, destPathARM32);
+              error != ERROR_SUCCESS) {
+            return report_copy_failure(silent, srcPathARM32, destPathARM32,
+                                       error);
+          }
+          retval += func(destPathARM32, true, true, true, hant, silent);
+        } else {
+          DEBUG << "Optional ARM32 IME file not found, skipping install: "
+                << wtou8(srcPathARM32);
         }
-        retval += func(destPathARM32, true, true, true, hant, silent);
       }
 
       // Then install the ARM64 (and x64) version.
@@ -187,20 +295,18 @@ int install_ime_file(std::wstring& srcPath,
       std::wstring destPathX64 = destPath;
       ireplace_last(srcPathX64, ext, L"x64" + ext);
       ireplace_last(destPathX64, ext, L"x64" + ext);
-      if (!copy_file(srcPathX64, destPathX64)) {
-        MSG_NOT_SILENT_ID_CAP(silent, destPathX64.c_str(),
-                              IDS_STR_INSTALL_FAILED, MB_ICONERROR | MB_OK);
-        return 1;
+      if (DWORD error = copy_file_with_error(srcPathX64, destPathX64);
+          error != ERROR_SUCCESS) {
+        return report_copy_failure(silent, srcPathX64, destPathX64, error);
       }
 
       std::wstring srcPathARM64 = srcPath;
       std::wstring destPathARM64 = destPath;
       ireplace_last(srcPathARM64, ext, L"ARM64" + ext);
       ireplace_last(destPathARM64, ext, L"ARM64" + ext);
-      if (!copy_file(srcPathARM64, destPathARM64)) {
-        MSG_NOT_SILENT_ID_CAP(silent, destPathARM64.c_str(),
-                              IDS_STR_INSTALL_FAILED, MB_ICONERROR | MB_OK);
-        return 1;
+      if (DWORD error = copy_file_with_error(srcPathARM64, destPathARM64);
+          error != ERROR_SUCCESS) {
+        return report_copy_failure(silent, srcPathARM64, destPathARM64, error);
       }
 
       // Since weaselARM64X is just a redirector we don't have separate
@@ -210,10 +316,9 @@ int install_ime_file(std::wstring& srcPath,
       ireplace_last(srcPath, ext, L"x64" + ext);
     }
 
-    if (!copy_file(srcPath, destPath)) {
-      MSG_NOT_SILENT_ID_CAP(silent, destPath.c_str(), IDS_STR_INSTALL_FAILED,
-                            MB_ICONERROR | MB_OK);
-      return 1;
+    if (DWORD error = copy_file_with_error(srcPath, destPath);
+        error != ERROR_SUCCESS) {
+      return report_copy_failure(silent, srcPath, destPath, error);
     }
     retval += func(destPath, true, true, false, hant, silent);
     if (Wow64RevertWow64FsRedirection(OldValue) == FALSE) {
@@ -342,13 +447,29 @@ int register_text_service(const std::wstring& tsf_path,
   shExInfo.hInstApp = 0;
   if (ShellExecuteExW(&shExInfo)) {
     WaitForSingleObject(shExInfo.hProcess, INFINITE);
+    DWORD exit_code = 0;
+    if (!GetExitCodeProcess(shExInfo.hProcess, &exit_code)) {
+      DWORD error = GetLastError();
+      CloseHandle(shExInfo.hProcess);
+      const std::wstring message = build_regsvr32_error_message(
+          app, params, tsf_path, error, 0, false);
+      MSG_NOT_SILENT_ID_CAP(silent, message.c_str(), IDS_STR_INORUN_FAILED,
+                            MB_ICONERROR | MB_OK);
+      return 1;
+    }
     CloseHandle(shExInfo.hProcess);
+    if (exit_code != 0) {
+      const std::wstring message = build_regsvr32_error_message(
+          app, params, tsf_path, ERROR_SUCCESS, exit_code, true);
+      MSG_NOT_SILENT_ID_CAP(silent, message.c_str(), IDS_STR_INORUN_FAILED,
+                            MB_ICONERROR | MB_OK);
+      return 1;
+    }
   } else {
-    WCHAR msg[100];
-    CString str;
-    str.LoadStringW(IDS_STR_ERRREGTSF);
-    StringCchPrintfW(msg, _countof(msg), str, params.c_str());
-    MSG_NOT_SILENT_ID_CAP(silent, msg, IDS_STR_INORUN_FAILED,
+    DWORD error = GetLastError();
+    const std::wstring message = build_regsvr32_error_message(
+        app, params, tsf_path, error, 0, false);
+    MSG_NOT_SILENT_ID_CAP(silent, message.c_str(), IDS_STR_INORUN_FAILED,
                           MB_ICONERROR | MB_OK);
     return 1;
   }

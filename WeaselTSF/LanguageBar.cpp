@@ -138,12 +138,11 @@ static LANGID GetActiveProfileLangId() {
 STDAPI CLangBarItemButton::GetTooltipString(BSTR* pbstrToolTip) {
   LANGID langid = get_language_id();
   if (langid == TEXTSERVICE_LANGID_HANS) {
-    *pbstrToolTip = SysAllocString(L"左键切换模式，右键打开菜单");
+    *pbstrToolTip = SysAllocString(L"右键打开菜单");
   } else if (langid == TEXTSERVICE_LANGID_HANT) {
-    *pbstrToolTip = SysAllocString(L"左鍵切換模式，右鍵打開菜單");
+    *pbstrToolTip = SysAllocString(L"右鍵打開菜單");
   } else {
-    *pbstrToolTip = SysAllocString(
-        L"Left-click to switch modes\n\nRight-click for more options");
+    *pbstrToolTip = SysAllocString(L"Right-click for more options");
   }
 
   return (*pbstrToolTip == NULL) ? E_OUTOFMEMORY : S_OK;
@@ -153,12 +152,7 @@ STDAPI CLangBarItemButton::OnClick(TfLBIClick click,
                                    POINT pt,
                                    const RECT* prcArea) {
   if (click == TF_LBI_CLK_LEFT) {
-    _pTextService->_HandleLangBarMenuSelect(
-        ascii_mode ? ID_WEASELTRAY_DISABLE_ASCII : ID_WEASELTRAY_ENABLE_ASCII);
-    ascii_mode = !ascii_mode;
-    if (_pLangBarItemSink) {
-      _pLangBarItemSink->OnUpdate(TF_LBI_STATUS | TF_LBI_ICON);
-    }
+    return S_OK;
   } else if (click == TF_LBI_CLK_RIGHT) {
     /* Open menu */
     HWND hwnd = _pTextService->_GetFocusedContextWindow();
@@ -296,6 +290,9 @@ std::wstring WeaselTSF::_GetRootDir() {
 void WeaselTSF::_HandleLangBarMenuSelect(UINT wID) {
   std::wstring dir{};
   switch (wID) {
+    case ID_WEASELTRAY_ENABLE_ASCII:
+    case ID_WEASELTRAY_DISABLE_ASCII:
+      break;
     case ID_WEASELTRAY_RERUN_SERVICE:
     case ID_WEASELTRAY_INSTALLDIR:
       if (RegGetStringValue(HKEY_LOCAL_MACHINE, GetWeaselRegName(),

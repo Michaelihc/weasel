@@ -1,3 +1,12 @@
+<a name="unreleased"></a>
+## Unreleased
+
+### 主要更新
+* 支持構建並打包 ARM64 版 `WeaselServer.exe`、`WeaselDeployer.exe` 及 `rime.dll`；安裝器會在 ARM64 Windows 上釋放對應文件。
+* 移除 pass-through／ASCII 模式。`ascii_mode` 不再作爲可切換工作模式使用。
+* 舊的 ASCII 切換入口僅爲兼容保留，不再生效：包括語言欄左鍵切換、單獨按下 `Shift`、`WeaselSetup.exe /toggleascii`，以及 `WeaselServer.exe /ascii`、`WeaselServer.exe /nascii`。
+* `app_options` 中與 ASCII 模式相關的舊設定（如 `ascii_mode`、`vim_mode`）不再用於切換模式；請改用其他配置方式定製輸入行爲。
+
 <a name="0.17.4"></a>
 ## [0.17.4](https://github.com/rime/weasel/compare/0.17.3...0.17.4)(2025-06-04)
 

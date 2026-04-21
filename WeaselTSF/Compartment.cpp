@@ -107,7 +107,6 @@ BOOL WeaselTSF::_IsKeyboardDisabled() {
   if (pContext->QueryInterface(IID_ITfCompartmentMgr, (void**)&pCompMgr) ==
       S_OK) {
     ITfCompartment* pCompartmentDisabled;
-    ITfCompartment* pCompartmentEmptyContext;
 
     /* Check GUID_COMPARTMENT_KEYBOARD_DISABLED */
     if (pCompMgr->GetCompartment(GUID_COMPARTMENT_KEYBOARD_DISABLED,
@@ -120,16 +119,10 @@ BOOL WeaselTSF::_IsKeyboardDisabled() {
       pCompartmentDisabled->Release();
     }
 
-    /* Check GUID_COMPARTMENT_EMPTYCONTEXT */
-    if (pCompMgr->GetCompartment(GUID_COMPARTMENT_EMPTYCONTEXT,
-                                 &pCompartmentEmptyContext) == S_OK) {
-      VARIANT var;
-      if (pCompartmentEmptyContext->GetValue(&var) == S_OK) {
-        if (var.vt == VT_I4)  // Even VT_EMPTY, GetValue() can succeed
-          fDisabled = (BOOL)var.lVal;
-      }
-      pCompartmentEmptyContext->Release();
-    }
+    // Some hosts expose an empty TSF context but still expect the IME to
+    // participate normally. Treat only the explicit keyboard-disabled flag as
+    // authoritative; otherwise Outlook/Search-like surfaces fall back to raw
+    // passthrough and cannot start composition.
     pCompMgr->Release();
   }
 
@@ -253,15 +246,10 @@ HRESULT WeaselTSF::_HandleCompartment(REFGUID guidCompartment) {
       _EnableLanguageBar(isOpen);
       _UpdateLanguageBar(_status);
     } else {
-      _status.ascii_mode = !_status.ascii_mode;
       _SetKeyboardOpen(true);
       if (_pLangBarButton && _pLangBarButton->IsLangBarDisabled())
         _EnableLanguageBar(true);
-      _HandleLangBarMenuSelect(_status.ascii_mode
-                                   ? ID_WEASELTRAY_ENABLE_ASCII
-                                   : ID_WEASELTRAY_DISABLE_ASCII);
-      if (_pEditSessionContext)
-        m_client.ClearComposition();
+      _status.ascii_mode = false;
       _UpdateLanguageBar(_status);
     }
   } else if (IsEqualGUID(guidCompartment,

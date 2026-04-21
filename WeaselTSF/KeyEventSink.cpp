@@ -34,6 +34,13 @@ void WeaselTSF::_ProcessKeyEvent(WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
       else if (ke.keycode == ibus::Down)
         ke.keycode = ibus::Up;
     }
+    if (ke.keycode == ibus::Shift_L || ke.keycode == ibus::Shift_R) {
+      // Ignore standalone Shift inside the IME so it cannot toggle modes.
+      *pfEaten = FALSE;
+      prevfEaten = *pfEaten;
+      prevKeyEvent = ke;
+      return;
+    }
     if (!keyCountToSimulate)
       *pfEaten = (BOOL)m_client.ProcessKeyEvent(ke);
 

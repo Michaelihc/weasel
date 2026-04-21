@@ -55,6 +55,12 @@ build.bat all
 Voila.
 
 Installer will be generated in `output\archives` directory.
+By default, the installer places program files under
+`C:\Program Files\Rime\weasel-<version>`.
+
+To include ARM64 binaries explicitly, run `build.bat arm64 all`. Installer
+builds enable ARM64 automatically when the required ARM64 Boost libraries are
+available; otherwise, build them first with `build.bat boost arm64`.
 
 ### Alternative: using prebuilt Rime binaries
 

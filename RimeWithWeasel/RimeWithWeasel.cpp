@@ -180,6 +180,7 @@ DWORD RimeWithWeaselHandler::AddSession(LPWSTR buffer, EatLine eat) {
       }
     }
   }
+  rime_api->set_option(session_id, "ascii_mode", False);
 
   WeaselSessionId ipc_id =
       _GenerateNewWeaselSessionId(m_session_status_map, m_pid);
@@ -271,20 +272,8 @@ BOOL RimeWithWeaselHandler::ProcessKeyEvent(KeyEvent keyEvent,
   RimeSessionId session_id = to_session_id(ipc_id);
   Bool handled = rime_api->process_key(session_id, keyEvent.keycode,
                                        expand_ibus_modifier(keyEvent.mask));
-  // vim_mode when keydown only
-  if (!handled && !(keyEvent.mask & ibus::Modifier::RELEASE_MASK)) {
-    bool isVimBackInCommandMode =
-        (keyEvent.keycode == ibus::Keycode::Escape) ||
-        ((keyEvent.mask & (1 << 2)) &&
-         (keyEvent.keycode == ibus::Keycode::XK_c ||
-          keyEvent.keycode == ibus::Keycode::XK_C ||
-          keyEvent.keycode == ibus::Keycode::XK_bracketleft));
-    if (isVimBackInCommandMode &&
-        rime_api->get_option(session_id, "vim_mode") &&
-        !rime_api->get_option(session_id, "ascii_mode")) {
-      rime_api->set_option(session_id, "ascii_mode", True);
-    }
-  }
+  if (rime_api->get_option(session_id, "ascii_mode"))
+    rime_api->set_option(session_id, "ascii_mode", False);
   _Respond(ipc_id, eat);
   _UpdateUI(ipc_id);
   m_active_session = ipc_id;
@@ -489,6 +478,8 @@ void RimeWithWeaselHandler::EndMaintenance() {
 void RimeWithWeaselHandler::SetOption(WeaselSessionId ipc_id,
                                       const std::string& opt,
                                       bool val) {
+  if (opt == "ascii_mode")
+    val = false;
   // from no-session client, not actual typing session
   if (!ipc_id) {
     if (m_global_ascii_mode && opt == "ascii_mode") {

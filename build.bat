@@ -126,6 +126,84 @@ if %build_rime% == 0 (
   set build_weasel=1
 )))))
 
+set host_is_arm64=0
+if /I "%PROCESSOR_ARCHITECTURE%" == "ARM64" set host_is_arm64=1
+if /I "%PROCESSOR_ARCHITEW6432%" == "ARM64" set host_is_arm64=1
+
+set arm32_boost_ready=0
+set arm64_boost_ready=0
+if exist "%BOOST_ROOT%\stage\lib\libboost_thread*-a32-*.lib" set arm32_boost_ready=1
+if exist "%BOOST_ROOT%\stage\lib\libboost_thread*-arm-*.lib" set arm32_boost_ready=1
+if exist "%BOOST_ROOT%\stage\lib\libboost_thread*-a64-*.lib" set arm64_boost_ready=1
+if exist "%BOOST_ROOT%\stage\lib\libboost_thread*-arm64-*.lib" set arm64_boost_ready=1
+
+set arm32_toolchain_ready=0
+if defined VCToolsInstallDir (
+  if exist "%VCToolsInstallDir%bin\HostArm64\arm\cl.exe" set arm32_toolchain_ready=1
+  if exist "%VCToolsInstallDir%bin\HostX64\arm\cl.exe" set arm32_toolchain_ready=1
+  if exist "%VCToolsInstallDir%bin\HostX86\arm\cl.exe" set arm32_toolchain_ready=1
+)
+
+if %build_arm64% == 0 (
+  if %build_installer% == 1 (
+    if %build_boost% == 1 (
+      echo Enabling ARM64 build because installer packages require weaselARM64.dll and weaselARM64X.dll.
+      set build_arm64=1
+    ) else (
+      if %arm64_boost_ready% == 1 (
+        echo Enabling ARM64 build because installer packages require weaselARM64.dll and weaselARM64X.dll.
+        set build_arm64=1
+      ) else (
+        echo Error: installer build is missing ARM64 prerequisites.
+        echo Error: this package would not include weaselARM64.dll or weaselARM64X.dll.
+        echo Error: run "build.bat boost arm64 installer" once, or prebuild ARM/ARM64 Boost libs and rerun with "build.bat arm64 installer".
+        exit /b 1
+      )
+    )
+  )
+)
+
+if %build_arm64% == 0 (
+  if %build_weasel% == 1 (
+    if %host_is_arm64% == 1 (
+      if %build_boost% == 1 (
+        echo Native ARM64 host detected. Enabling ARM64 build for Weasel binaries.
+        set build_arm64=1
+      ) else (
+        if %arm64_boost_ready% == 1 (
+          echo Native ARM64 host detected. Enabling ARM64 build for Weasel binaries.
+          set build_arm64=1
+        ) else (
+          echo Warning: native ARM64 host detected, but ARM64 Boost libs were not found under %BOOST_ROOT%\stage\lib.
+          echo Warning: this build will not produce weaselARM64.dll or weaselARM64X.dll.
+          echo Warning: installation on ARM64 will fail until you run "build.bat boost arm64" and rebuild with "build.bat arm64".
+        )
+      )
+    )
+  )
+)
+
+if %build_arm64% == 1 (
+  if %build_boost% == 0 (
+    if %arm64_boost_ready% == 0 (
+      echo Error: ARM64 Boost libs not found under %BOOST_ROOT%\stage\lib.
+      echo Error: run "build.bat boost arm64" once to build the required ARM64 libraries, then rerun this command.
+      exit /b 1
+    )
+  )
+)
+
+if %build_weasel% == 1 (
+  if %build_arm64% == 1 (
+    if not exist libarm64\rime.lib (
+      set build_rime=1
+    )
+    if not exist output\ARM64\rime.dll (
+      set build_rime=1
+    )
+  )
+)
+
 rem quit WeaselServer.exe before building
 cd /d %WEASEL_ROOT%
 if exist output\weaselserver.exe (
@@ -163,6 +241,13 @@ if %build_rime% == 1 (
   rem build Win32 librime
   set ARCH=Win32
   call :build_librime_platform Win32 %WEASEL_ROOT%\lib %WEASEL_ROOT%\output\Win32
+  if %build_arm64% == 1 (
+    if not exist %WEASEL_ROOT%\libarm64 mkdir %WEASEL_ROOT%\libarm64
+    if not exist %WEASEL_ROOT%\output\ARM64 mkdir %WEASEL_ROOT%\output\ARM64
+    rem build ARM64 librime
+    set ARCH=ARM64
+    call :build_librime_platform ARM64 %WEASEL_ROOT%\libarm64 %WEASEL_ROOT%\output\ARM64
+  )
   rem clean the modified file
   rem git checkout .
   rem git submodule foreach git checkout .
@@ -175,6 +260,14 @@ if %build_weasel% == 1 (
   )
   if not exist output\data\opencc\TSCharacters.ocd* (
     set build_opencc=1
+  )
+  if %build_arm64% == 1 (
+    if not exist libarm64\rime.lib (
+      set build_rime=1
+    )
+    if not exist output\ARM64\rime.dll (
+      set build_rime=1
+    )
   )
 )
 if %build_data% == 1 call :build_data
@@ -200,9 +293,13 @@ if defined SDKVER set build_sdk_option=/p:WindowsTargetPlatformVersion=%SDKVER%
 if not defined SDKVER set build_sdk_option=
 
 if %build_arm64% == 1 (
-
-  msbuild.exe weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="ARM" /fl6 %build_sdk_option%
-  if errorlevel 1 goto error
+  if %arm32_toolchain_ready% == 1 (
+    msbuild.exe weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="ARM" /fl6 %build_sdk_option%
+    if errorlevel 1 goto error
+  ) else (
+    echo Warning: 32-bit ARM MSVC compiler not found. Skipping weaselARM.dll build.
+    echo Warning: ARM64 and ARM64X outputs will still be produced.
+  )
   msbuild.exe weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="ARM64" /fl5 %build_sdk_option%
   if errorlevel 1 goto error
 )
@@ -220,6 +317,11 @@ if %build_arm64% == 1 (
 
   copy arm64x_wrapper\weaselARM64X.dll output
   if errorlevel 1 goto error
+  if exist WinSparkle.dll (
+    if not exist output\ARM64 mkdir output\ARM64
+    copy /Y WinSparkle.dll output\ARM64\WinSparkle.dll
+    if errorlevel 1 goto error
+  )
 )
 
 if %build_installer% == 1 (

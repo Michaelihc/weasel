@@ -169,7 +169,7 @@ static int Run(LPTSTR lpCmdLine) {
           L"/eu            - Enable automatic update check\n"
           L"/du            - Disable automatic update check\n"
           L"/toggleime     - Toggle IME on open/close(ctrl+space)\n"
-          L"/toggleascii   - Toggle ASCII on open/close(ctrl+space)\n"
+          L"/toggleascii   - Deprecated; ASCII mode has been removed\n"
           L"/testing       - Set update channel to testing\n"
           L"/release       - Set update channel to release\n"
           L"/userdir:<dir> - Set user directory\n",

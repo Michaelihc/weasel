@@ -125,7 +125,7 @@ toquit:
   StrCmp $R0 "" 0 skip
   ; The default installation directory
   ; install x64 build for NativeARM64_WINDOWS11 and NativeAMD64_WINDOWS11
-  ${If} ${AtLeastWin11} ; Windows 11 and above
+  ${If} ${AtLeastBuild} 22000 ; Windows 11 and above
     ${If} ${IsNativeARM64}
       StrCpy $INSTDIR "$PROGRAMFILES64\Rime"
     ${ElseIf} ${IsNativeAMD64}
@@ -135,7 +135,9 @@ toquit:
     ${Endif}
   ; install x64 build for NativeAMD64_BELLOW_WINDOWS11
   ${Else} ; Windows 10 or bellow
-    ${If} ${IsNativeAMD64}
+    ${If} ${IsNativeARM64}
+      StrCpy $INSTDIR "$PROGRAMFILES64\Rime"
+    ${ElseIf} ${IsNativeAMD64}
       StrCpy $INSTDIR "$PROGRAMFILES64\Rime"
     ${Else}
       StrCpy $INSTDIR "$PROGRAMFILES\Rime"
@@ -246,12 +248,12 @@ program_files:
     File /nonfatal "weaselARM64X.dll"
   ${EndIf}
   ; install x64 build for NativeARM64_WINDOWS11 and NativeAMD64_WINDOWS11
-  ${If} ${AtLeastWin11} ; Windows 11 and above
+  ${If} ${AtLeastBuild} 22000 ; Windows 11 and above
     ${If} ${IsNativeARM64}
-      File "WeaselDeployer.exe"
-      File "WeaselServer.exe"
-      File "rime.dll"
-      File "WinSparkle.dll"
+      File "ARM64\WeaselDeployer.exe"
+      File "ARM64\WeaselServer.exe"
+      File "ARM64\rime.dll"
+      File /nonfatal "ARM64\WinSparkle.dll"
     ${ElseIf} ${IsNativeAMD64}
       File "WeaselDeployer.exe"
       File "WeaselServer.exe"
@@ -265,7 +267,12 @@ program_files:
     ${Endif}
   ; install x64 build for NativeAMD64_BELLOW_WINDOWS11
   ${Else} ; Windows 10 or bellow
-    ${If} ${IsNativeAMD64}
+    ${If} ${IsNativeARM64}
+      File "ARM64\WeaselDeployer.exe"
+      File "ARM64\WeaselServer.exe"
+      File "ARM64\rime.dll"
+      File /nonfatal "ARM64\WinSparkle.dll"
+    ${ElseIf} ${IsNativeAMD64}
       File "WeaselDeployer.exe"
       File "WeaselServer.exe"
       File "rime.dll"

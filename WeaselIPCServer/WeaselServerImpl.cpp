@@ -114,7 +114,7 @@ LRESULT ServerImpl::OnCommand(UINT uMsg,
   UINT uID = LOWORD(wParam);
   switch (uID) {
     case ID_WEASELTRAY_ENABLE_ASCII:
-      m_pRequestHandler->SetOption(lParam, "ascii_mode", true);
+      m_pRequestHandler->SetOption(lParam, "ascii_mode", false);
       return 0;
     case ID_WEASELTRAY_DISABLE_ASCII:
       m_pRequestHandler->SetOption(lParam, "ascii_mode", false);
