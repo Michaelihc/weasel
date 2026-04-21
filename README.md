@@ -13,6 +13,13 @@
 
 項目主頁：https://rime.im
 
+重要變更
+--------
+
+此版本已禁用 pass-through／ASCII 模式。`ascii_mode`、`global_ascii`、`app_options` 中的 `ascii_mode`／`vim_mode`，以及舊的 ASCII 切換入口不再切換到英文直通狀態。
+
+受影響的入口包括：語言欄左鍵、單獨按下 <kbd>Shift</kbd>、`WeaselSetup.exe /toggleascii`，以及 `WeaselServer.exe /ascii`、`WeaselServer.exe /nascii`。如需暫停輸入法，請使用 Windows 輸入法開關或小狼毫本身的開關功能。
+
 您可能還需要 RIME 用於其他操作系統的發行版：
 
   * ibus-rime、fcitx5-rime 或 fcitx-rime 用於 Linux
@@ -38,7 +45,7 @@
 
 可通過快捷鍵 <kbd>Ctrl+`</kbd> 或 <kbd>F4</kbd> 呼出方案選單、切換輸入方式。
 
-當前版本已移除 pass-through／ASCII 模式。`ascii_mode` 及相關切換不再生效；語言欄左鍵、單獨按下 <kbd>Shift</kbd>，以及舊的 ASCII 切換命令僅爲兼容保留，不再用於切換模式。
+當前版本已禁用 pass-through／ASCII 模式。`ascii_mode` 及相關切換不再生效；語言欄左鍵、單獨按下 <kbd>Shift</kbd>，以及舊的 ASCII 切換命令僅爲兼容保留，不再用於切換模式。
 
 如需暫停輸入法，請使用系統或輸入法本身的開關功能，而非依賴 `ascii_mode`。
 
